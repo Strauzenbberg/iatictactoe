@@ -208,7 +208,9 @@
       <div class="controls">
         <button class="btn primary" id="btnNovo">Nova rodada</button>
         <button class="btn" id="btnZerar">Zerar placar</button>
+        <button class="btn" id="btnPlayer2">Player 2</button>
       </div>
+    </div>
   </div>
 
   <script>
@@ -220,12 +222,13 @@
       const announce = document.getElementById('announce');
       const btnNovo = document.getElementById('btnNovo');
       const btnZerar = document.getElementById('btnZerar');
+      const btnPlayer2 = document.getElementById('btnPlayer2');
       const scoreXEl = document.getElementById('scoreX');
       const scoreOEl = document.getElementById('scoreO');
       const scoreDEl = document.getElementById('scoreD');
       const nivelEl = document.getElementById('nivel');
 
-      // Sons offline (Web Audio)
+      // desbloqueio de áudio
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const audioCtx = new AudioCtx();
       const unlock = () => {
@@ -248,8 +251,21 @@
         osc.start(start);
         osc.stop(start + duration + 0.02);
       }
-      const sClick = { play(){ const t=audioCtx.currentTime; tone({freq:520,duration:0.07,type:'square',volume:0.18,start:t}); tone({freq:260,duration:0.06,type:'square',volume:0.12,start:t}); } };
-      const sWin   = { play(){ const t=audioCtx.currentTime+0.02; tone({freq:740,duration:0.12,type:'sine',volume:0.22,start:t}); tone({freq:880,duration:0.12,type:'sine',volume:0.22,start:t+0.12}); tone({freq:988,duration:0.16,type:'sine',volume:0.22,start:t+0.24}); } };
+      const sClick = {
+        play(){
+          const t = audioCtx.currentTime;
+          tone({ freq:520, duration:0.07, type:'square', volume:0.18, start:t });
+          tone({ freq:260, duration:0.06, type:'square', volume:0.12, start:t });
+        }
+      };
+      const sWin = {
+        play(){
+          const t = audioCtx.currentTime + 0.02;
+          tone({ freq:740, duration:0.12, type:'sine', volume:0.22, start:t });
+          tone({ freq:880, duration:0.12, type:'sine', volume:0.22, start:t + 0.12 });
+          tone({ freq:988, duration:0.16, type:'sine', volume:0.22, start:t + 0.24 });
+        }
+      };
 
       const WINS = [
         [0,1,2],[3,4,5],[6,7,8],
@@ -257,8 +273,8 @@
         [0,4,8],[2,4,6]
       ];
 
-      const HUMAN='X', CPU='O';
-      const state = { board:Array(9).fill(null), current:HUMAN, running:true, scores:{X:0,O:0,D:0} };
+      const HUMAN = 'X', CPU = 'O';
+      const state = { board:Array(9).fill(null), current:HUMAN, running:true, scores:{X:0, O:0, D:0} };
 
       function setTurnUI(){
         turnText.textContent = `Vez de ${state.current}`;
@@ -273,7 +289,7 @@
         el.classList.toggle('disabled', !!val || !state.running);
         el.setAttribute('aria-label', `casa ${i+1}${val ? ' contém ' + val : ''}`);
       }
-      function renderBoard(){ for (let i=0;i<9;i++) renderCell(i); }
+      function renderBoard(){ cells.forEach((_,i) => renderCell(i)); }
       function clearHighlights(){
         cells.forEach(c => c.classList.remove('win'));
         announce.style.display = 'none';
@@ -289,50 +305,57 @@
         return null;
       }
       function endRound(res){
-        state.running=false;
-        cells.forEach(c=>c.classList.add('disabled'));
+        state.running = false;
+        cells.forEach(c => c.classList.add('disabled'));
         if (res.draw){
-          state.scores.D++; scoreDEl.textContent = state.scores.D;
-          announce.textContent = 'Empate!'; announce.classList.add('draw');
+          state.scores.D++;
+          scoreDEl.textContent = state.scores.D;
+          announce.textContent = 'Empate!';
+          announce.classList.add('draw');
         } else {
           const w = res.winner;
-          (w==='X' ? state.scores.X++ : state.scores.O++);
+          if (w === 'X') state.scores.X++; else state.scores.O++;
           scoreXEl.textContent = state.scores.X;
           scoreOEl.textContent = state.scores.O;
           res.combo.forEach(i => cells[i].classList.add('win'));
           announce.textContent = `${w} venceu!`;
           announce.classList.add(w==='X' ? 'win-x' : 'win-o');
-          try { sWin.play(); } catch(e) {}
+          try { sWin.play(); } catch(e){}
         }
         announce.style.display = 'block';
       }
 
-      // IA — minimax + aleatoriedade controlada
-      const winnerOf = (b) => {
-        for (const [a,b2,c] of WINS){ if (b[a] && b[a]===b[b2] && b[a]===b[c]) return b[a]; }
+      // IA: minimax + aleatoriedade controlada
+      const winnerOf = b => {
+        for (const [a,b2,c] of WINS){
+          if (b[a] && b[a] === b[b2] && b[a] === b[c]) return b[a];
+        }
         return null;
       };
-      const emptySpots = (b) => { const r=[]; for (let i=0;i<9;i++) if (!b[i]) r.push(i); return r; };
+      const emptySpots = b => b.map((v,i) => v ? null : i).filter(i => i!==null);
 
-      function minimax(b, current, depth){
-        const w = winnerOf(b);
-        if (w===CPU) return { score: 10 - depth };
-        if (w===HUMAN) return { score: depth - 10 };
-        const empties = emptySpots(b);
+      function minimax(board, current, depth){
+        const w = winnerOf(board);
+        if (w === CPU) return { score: 10 - depth };
+        if (w === HUMAN) return { score: depth - 10 };
+        const empties = emptySpots(board);
         if (!empties.length) return { score: 0 };
-        let bestScore = (current===CPU ? -Infinity : Infinity), bestIdx = null;
+
+        let bestScore = current===CPU ? -Infinity : Infinity;
+        let bestIdx = null;
         for (const idx of empties){
-          b[idx] = current;
-          const { score } = minimax(b, current===CPU ? HUMAN : CPU, depth+1);
-          b[idx] = null;
-          if (current===CPU ? (score>bestScore) : (score<bestScore)){
-            bestScore = score; bestIdx = idx;
+          board[idx] = current;
+          const { score } = minimax(board, current===CPU ? HUMAN : CPU, depth + 1);
+          board[idx] = null;
+          if (current===CPU ? (score > bestScore) : (score < bestScore)){
+            bestScore = score;
+            bestIdx = idx;
           }
         }
         return { score: bestScore, idx: bestIdx };
       }
 
-      // Dificuldade (erro controlado da IA): Fácil 0.9, Médio 0.6, Difícil 0.2
+      // configura dificuldade
       let dificuldadeErro = parseFloat(nivelEl.value);
       nivelEl.addEventListener('change', function(){
         dificuldadeErro = parseFloat(this.value);
@@ -342,46 +365,54 @@
         const b = state.board.slice();
         const empties = emptySpots(b);
 
-        // vitória imediata
-        for (const i of empties){ b[i]=CPU; if (winnerOf(b)===CPU) return i; b[i]=null; }
+        // vitória imediato
+        for (const i of empties){
+          b[i] = CPU;
+          if (winnerOf(b) === CPU) return i;
+          b[i] = null;
+        }
         // bloqueio imediato
-        for (const i of empties){ b[i]=HUMAN; if (winnerOf(b)===HUMAN) return i; b[i]=null; }
+        for (const i of empties){
+          b[i] = HUMAN;
+          if (winnerOf(b) === HUMAN) return i;
+          b[i] = null;
+        }
 
-        // fator de aleatoriedade controlada (só quando não há urgência)
+        // erro proposital
         if (empties.length && Math.random() < dificuldadeErro){
           return empties[Math.floor(Math.random() * empties.length)];
         }
+        // centro
+        if (b[4] == null) return 4;
 
-        // centro preferencial
-        if (b[4]==null) return 4;
-
-        // minimax como fallback
+        // minimax
         const { idx } = minimax(b, CPU, 0);
         return idx ?? empties[0];
       }
 
-      // Fluxo
       function humanPlay(i){
-        if (!state.running || state.board[i] || state.current!==HUMAN) return;
+        if (!state.running || state.board[i] || state.current !== HUMAN) return;
         state.board[i] = HUMAN;
         renderCell(i);
-        try { sClick.play(); } catch(e) {}
+        try { sClick.play(); } catch(e){}
         const res = checkWinner();
         if (res){ endRound(res); return; }
-        state.current = CPU; setTurnUI();
+        state.current = CPU;
+        setTurnUI();
         setTimeout(aiPlay, 220);
       }
       function aiPlay(){
-        if (!state.running || state.current!==CPU) return;
-        const m = bestMove();
-        if (m != null){
-          state.board[m] = CPU;
-          renderCell(m);
-          try { sClick.play(); } catch(e) {}
+        if (!state.running || state.current !== CPU) return;
+        const move = bestMove();
+        if (move != null){
+          state.board[move] = CPU;
+          renderCell(move);
+          try { sClick.play(); } catch(e){}
         }
         const res = checkWinner();
         if (res){ endRound(res); return; }
-        state.current = HUMAN; setTurnUI();
+        state.current = HUMAN;
+        setTurnUI();
       }
 
       function newRound(){
@@ -400,62 +431,62 @@
         newRound();
       }
 
-      // Eventos
-      boardEl.addEventListener('click', (e)=>{
+      // eventos
+      boardEl.addEventListener('click', e => {
         const cell = e.target.closest('.square');
-        if (!cell) return;
-        if (state.current !== HUMAN) return;
-        const idx = Number(cell.dataset.idx);
-        humanPlay(idx);
+        if (!cell || state.current !== HUMAN) return;
+        humanPlay(Number(cell.dataset.idx));
       });
-      boardEl.addEventListener('keydown', (e)=>{
+      boardEl.addEventListener('keydown', e => {
         const cell = e.target.closest('.square');
         if (!cell) return;
-        if ((e.key==='Enter' || e.key===' ') && state.running && state.current===HUMAN){
+        if ((e.key === 'Enter' || e.key === ' ') && state.running && state.current === HUMAN){
           e.preventDefault();
           humanPlay(Number(cell.dataset.idx));
         }
       });
       btnNovo.addEventListener('click', newRound);
       btnZerar.addEventListener('click', resetScores);
+      btnPlayer2.addEventListener('click', () => {
+        window.location.href = 'https://strauzenbberg.github.io/tictactoe/';
+      });
 
-      // Inicialização
+      // init
       newRound();
       cells.forEach(c => c.setAttribute('tabindex','0'));
     })();
   </script>
+
   <script>
-(function () {
-  var NAMESPACE = 'meu-portfolio';
-  var KEY = location.pathname; // usa o caminho da URL como identificador
+    (function () {
+      var NAMESPACE = 'meu-portfolio';
+      var KEY = location.pathname;
 
-  function render(n) {
-    var id = 'visit-counter-badge';
-    var el = document.getElementById(id);
-    if (!el) {
-      el = document.createElement('div');
-      el.id = id;
-      el.style.cssText = 'position:fixed;bottom:12px;right:12px;background:rgba(0,0,0,0.4);color:#fff;padding:6px 10px;border-radius:999px;font:12px/1.2 system-ui,Arial,sans-serif;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:2147483647';
-      document.body.appendChild(el);
-    }
-    el.textContent = 'Visitas: ' + n;
-  }
+      function render(n) {
+        var id = 'visit-counter-badge';
+        var el = document.getElementById(id);
+        if (!el) {
+          el = document.createElement('div');
+          el.id = id;
+          el.style.cssText = 'position:fixed;bottom:12px;right:12px;background:rgba(0,0,0,0.4);color:#fff;padding:6px 10px;border-radius:999px;font:12px/1.2 system-ui,Arial,sans-serif;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:2147483647';
+          document.body.appendChild(el);
+        }
+        el.textContent = 'Visitas: ' + n;
+      }
 
-  var url = 'https://api.countapi.xyz/hit/' +
-            encodeURIComponent(NAMESPACE) + '/' +
-            encodeURIComponent(KEY);
+      var url = 'https://api.countapi.xyz/hit/' +
+                encodeURIComponent(NAMESPACE) + '/' +
+                encodeURIComponent(KEY);
 
-  fetch(url).then(r => r.json()).then(d => {
-    render(d && typeof d.value === 'number' ? d.value : 0);
-  }).catch(() => {
-    var k = 'vc_' + NAMESPACE + '_' + KEY;
-    var n = +(localStorage.getItem(k) || 0) + 1;
-    localStorage.setItem(k, n);
-    render(n);
-  });
-})();
-</script>
+      fetch(url).then(r => r.json()).then(d => {
+        render(d && typeof d.value === 'number' ? d.value : 0);
+      }).catch(() => {
+        var k = 'vc_' + NAMESPACE + '_' + KEY;
+        var n = +(localStorage.getItem(k) || 0) + 1;
+        localStorage.setItem(k, n);
+        render(n);
+      });
+    })();
+  </script>
 </body>
-
 </html>
-
